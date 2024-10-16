@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/gsap.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+        }
+
+        .apple-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 1.5em;
+        }
+
+        .sort-icon::after {
+            content: '\2195'; /* Unicode for up/down arrow */
+            margin-left: 5px;
+            font-size: 0.8em;
+        }
+
+        .sort-icon.asc::after {
+            content: '\2191'; /* Unicode for up arrow */
+        }
+
+        .sort-icon.desc::after {
+            content: '\2193'; /* Unicode for down arrow */
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div class="p-8">
+            <h1 class="text-4xl font-semibold mb-6 text-center">{{.Title}}</h1>
+            <div class="flex space-x-4 mb-6">
+                <div class="flex-1">
+                    <label for="logType" class="block text-sm font-medium text-gray-600 mb-2">Log Type</label>
+                    <select id="logType" class="apple-select w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-150 ease-in-out">
+                        <option>Laravel</option>
+                        <option>Fiber</option>
+                        <!-- TODO: Add more options -->
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label for="levelFilter" class="block text-sm font-medium text-gray-600 mb-2">Filter by Level</label>
+                    <select id="levelFilter" class="apple-select w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-150 ease-in-out">
+                        <option value="all">All Levels</option>
+                        <option value="error">Error</option>
+                        <option value="warning">Warning</option>
+                        <option value="info">Info</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-600 uppercase text-sm leading-normal">
+                            <th class="py-3 px-6 text-left cursor-pointer sort-icon" data-sort="level">Level</th>
+                            <th class="py-3 px-6 text-left cursor-pointer sort-icon" data-sort="time">Time</th>
+                            <th class="py-3 px-6 text-left cursor-pointer sort-icon" data-sort="description">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logContainer">
+                        <!-- Logs will be displayed here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        const logContainer = document.getElementById('logContainer');
+        const logTypeSelect = document.getElementById('logType');
+        const levelFilter = document.getElementById('levelFilter');
+        let currentSort = { column: null, direction: 'asc' };
+        let logs = [];
+
+        function fetchLogs() {
+            const logType = logTypeSelect.value.toLowerCase();
+            fetch(`/api/logs?type=${logType}`)
+                .then(response => response.json())
+                .then(data => {
+                    logs = data.data;
+                    renderLogs();
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    logContainer.innerHTML = '<tr><td colspan="3" class="text-red-500 text-center py-4">Error fetching logs. Please try again.</td></tr>';
+                });
+        }
+
+        function renderLogs() {
+            logContainer.innerHTML = '';
+            const filteredLogs = filterLogs(logs);
+            const sortedLogs = sortLogs(filteredLogs);
+            
+            sortedLogs.forEach((log, index) => {
+                const row = document.createElement('tr');
+                row.className = `border-b border-gray-200 hover:bg-gray-100 transition-colors duration-150 ease-in-out ${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`;
+                row.innerHTML = `
+                    <td class="py-3 px-6 text-left whitespace-nowrap">
+                        <span class="font-medium px-3 py-1 rounded-full text-xs ${getLogLevelBadgeClass(log.level)}">${log.level}</span>
+                    </td>
+                    <td class="py-3 px-6 text-left">${log.timestamp}</td>
+                    <td class="py-3 px-6 text-left">${log.message}</td>
+                `;
+                logContainer.appendChild(row);
+            });
+        }
+
+        function filterLogs(logs) {
+            const level = levelFilter.value;
+            return level === 'all' ? logs : logs.filter(log => log.level.toLowerCase() === level);
+        }
+
+        function sortLogs(logs) {
+            if (!currentSort.column) return logs;
+
+            return logs.sort((a, b) => {
+                let comparison = 0;
+                switch (currentSort.column) {
+                    case 'level':
+                        comparison = a.level.localeCompare(b.level);
+                        break;
+                    case 'time':
+                        comparison = new Date(a.timestamp) - new Date(b.timestamp);
+                        break;
+                    case 'description':
+                        comparison = a.message.localeCompare(b.message);
+                        break;
+                }
+                return currentSort.direction === 'asc' ? comparison : -comparison;
+            });
+        }
+
+        function getLogLevelBadgeClass(level) {
+            switch (level.toLowerCase()) {
+                case 'error': return 'bg-red-100 text-red-800';
+                case 'warning': return 'bg-yellow-100 text-yellow-800';
+                case 'info': return 'bg-blue-100 text-blue-800';
+                default: return 'bg-gray-100 text-gray-800';
+            }
+        }
+
+        logTypeSelect.addEventListener('change', fetchLogs);
+        levelFilter.addEventListener('change', renderLogs);
+
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                const column = th.dataset.sort;
+                if (currentSort.column === column) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.column = column;
+                    currentSort.direction = 'asc';
+                }
+                document.querySelectorAll('th[data-sort]').forEach(el => {
+                    el.classList.remove('asc', 'desc');
+                });
+                th.classList.add(currentSort.direction);
+                renderLogs();
+            });
+        });
+
+        fetchLogs(); // Initial fetch
+    </script>
+</body>
+</html>
